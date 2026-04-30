@@ -42,9 +42,14 @@ function checkMaintenanceMode() {
                         return;
                     }
 
+                    // Read new detail fields
+                    var maintStart = record.maintenance_start ? record.maintenance_start.value : '';
+                    var maintEnd = record.maintenance_end ? record.maintenance_end.value : '';
+                    var maintMsg = record.maintenance_message ? record.maintenance_message.value : '';
+
                     var isUnderMaintenance = status === 0;
                     if (isUnderMaintenance) {
-                        showMaintenanceOverlay();
+                        showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
                         reject(new Error('Under maintenance'));
                     } else {
                         resolve();
@@ -61,7 +66,23 @@ function checkMaintenanceMode() {
     });
 }
 
-function showMaintenanceOverlay() {
+function formatMaintenanceDate(isoStr) {
+    if (!isoStr) return '';
+    try {
+        var d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        var y = d.getFullYear();
+        var m = d.getMonth() + 1;
+        var day = d.getDate();
+        var h = ('0' + d.getHours()).slice(-2);
+        var min = ('0' + d.getMinutes()).slice(-2);
+        return y + '年' + m + '月' + day + '日 ' + h + ':' + min;
+    } catch (e) {
+        return isoStr;
+    }
+}
+
+function showMaintenanceOverlay(maintStart, maintEnd, maintMsg) {
     var style = document.createElement('style');
     style.textContent = '@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600;700&display=swap");' +
         '@keyframes mt-float1{0%,100%{transform:translateY(0) scale(1);opacity:0.3}50%{transform:translateY(-30px) scale(1.1);opacity:0.6}}' +
@@ -161,9 +182,65 @@ function showMaintenanceOverlay() {
         'background:linear-gradient(90deg,transparent,#BAD7D8,transparent);border-radius:2px;';
     box.appendChild(divider);
 
-    // Message
+    // Schedule info (if maintenance_start or maintenance_end provided)
+    if (maintStart || maintEnd) {
+        var scheduleBox = document.createElement('div');
+        scheduleBox.style.cssText = 'background:rgba(186,215,216,0.08);border:1px solid rgba(186,215,216,0.15);' +
+            'border-radius:12px;padding:16px 20px;margin:0 0 20px;text-align:center;';
+
+        var schedTitle = document.createElement('div');
+        schedTitle.style.cssText = 'font-size:12px;color:rgba(186,215,216,0.8);font-weight:600;' +
+            'letter-spacing:1px;margin-bottom:12px;';
+        schedTitle.textContent = '⏱ メンテナンス予定';
+        scheduleBox.appendChild(schedTitle);
+
+        if (maintStart) {
+            var startRow = document.createElement('div');
+            startRow.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-bottom:6px;' +
+                'font-size:14px;color:rgba(255,255,255,0.75);';
+            startRow.innerHTML = '<span style="color:#BAD7D8;font-weight:600;">開始:</span>' +
+                '<span>' + formatMaintenanceDate(maintStart) + '</span>';
+            scheduleBox.appendChild(startRow);
+        }
+        if (maintStart && maintEnd) {
+            var arrow = document.createElement('div');
+            arrow.style.cssText = 'font-size:13px;color:rgba(186,215,216,0.5);margin:4px 0;';
+            arrow.textContent = '▼';
+            scheduleBox.appendChild(arrow);
+        }
+        if (maintEnd) {
+            var endRow = document.createElement('div');
+            endRow.style.cssText = 'display:inline-flex;align-items:center;gap:8px;' +
+                'font-size:14px;color:rgba(255,255,255,0.75);';
+            endRow.innerHTML = '<span style="color:#BAD7D8;font-weight:600;">終了:</span>' +
+                '<span>' + formatMaintenanceDate(maintEnd) + '</span>';
+            scheduleBox.appendChild(endRow);
+        }
+        box.appendChild(scheduleBox);
+    }
+
+    // Message – custom or default
+    if (maintMsg) {
+        var msgBox = document.createElement('div');
+        msgBox.style.cssText = 'background:rgba(255,200,50,0.08);border:1px solid rgba(255,200,50,0.2);' +
+            'border-radius:12px;padding:16px 20px;margin:0 0 24px;text-align:center;';
+
+        var msgIcon = document.createElement('div');
+        msgIcon.style.cssText = 'font-size:12px;color:rgba(255,200,50,0.8);font-weight:600;' +
+            'letter-spacing:1px;margin-bottom:8px;';
+        msgIcon.textContent = '📋 メンテナンス内容';
+        msgBox.appendChild(msgIcon);
+
+        var msgText = document.createElement('div');
+        msgText.style.cssText = 'font-size:14px;color:rgba(255,255,255,0.85);line-height:1.8;font-weight:400;';
+        msgText.innerHTML = maintMsg.replace(/\n/g, '<br>');
+        msgBox.appendChild(msgText);
+
+        box.appendChild(msgBox);
+    }
+
     var msg = document.createElement('p');
-    msg.style.cssText = 'margin:0 0 32px;font-size:15px;color:rgba(255,255,255,0.7);' +
+    msg.style.cssText = 'margin:0 0 28px;font-size:14px;color:rgba(255,255,255,0.5);' +
         'line-height:1.8;font-weight:300;';
     msg.innerHTML = '現在、システムのメンテナンスを実施しております。<br>しばらくお待ちください。';
     box.appendChild(msg);
@@ -208,11 +285,11 @@ function showMaintenanceOverlay() {
     document.body.appendChild(overlay);
 }
 
-(function() {
-    kintone.events.on(['app.record.index.show', 'app.record.detail.show', 'app.record.edit.show', 'app.record.create.show'], function(event) {
-        return checkMaintenanceMode().then(function() {
+(function () {
+    kintone.events.on(['app.record.index.show', 'app.record.detail.show', 'app.record.edit.show', 'app.record.create.show'], function (event) {
+        return checkMaintenanceMode().then(function () {
             return event;
-        }).catch(function() {
+        }).catch(function () {
             return false;
         });
     });
