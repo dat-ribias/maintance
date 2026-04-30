@@ -48,12 +48,40 @@ function checkMaintenanceMode() {
                     var maintMsg = record.maintenance_message ? record.maintenance_message.value : '';
 
                     var isUnderMaintenance = status === 0;
-                    if (isUnderMaintenance) {
+                    if (!isUnderMaintenance) {
+                        resolve();
+                        return;
+                    }
+
+                    // Read group bypass list
+                    var bypassGroupsRaw = record.bypass_groups_code ? record.bypass_groups_code.value : '';
+                    var bypassGroups = bypassGroupsRaw.split(',').map(function (g) {
+                        return g.trim();
+                    }).filter(function (g) { return g !== ''; });
+
+                    if (bypassGroups.length === 0) {
+                        // No group bypass configured → show maintenance
                         showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
                         reject(new Error('Under maintenance'));
-                    } else {
-                        resolve();
+                        return;
                     }
+
+                    // Fetch current user's groups and check bypass
+                    checkGroupBypass(currentUser.code, bypassGroups)
+                        .then(function (isBypassed) {
+                            if (isBypassed) {
+                                console.log('[Maintenance] Group bypass for user:', currentUser.code);
+                                resolve();
+                            } else {
+                                showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
+                                reject(new Error('Under maintenance'));
+                            }
+                        })
+                        .catch(function () {
+                            // If group check fails, show maintenance to be safe
+                            showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
+                            reject(new Error('Under maintenance'));
+                        });
                 } else {
                     resolve();
                 }
@@ -61,6 +89,36 @@ function checkMaintenanceMode() {
             function (error) {
                 console.error('[Maintenance] Check failed:', error);
                 resolve();
+            }
+        );
+    });
+}
+
+/**
+ * Check if the user belongs to any of the bypass groups
+ * Uses Kintone REST API: /v1/user/groups.json
+ */
+function checkGroupBypass(userCode, bypassGroups) {
+    return new Promise(function (resolve, reject) {
+        kintone.api(
+            kintone.api.url('/v1/user/groups', true),
+            'GET',
+            { code: userCode },
+            function (resp) {
+                var userGroups = resp.groups || [];
+                var isBypassed = false;
+                for (var i = 0; i < userGroups.length; i++) {
+                    if (bypassGroups.indexOf(userGroups[i].code) !== -1) {
+                        isBypassed = true;
+                        break;
+                    }
+                }
+                console.log('[Maintenance] User groups:', userGroups.map(function (g) { return g.code; }), '| Bypass groups:', bypassGroups, '| Bypassed:', isBypassed);
+                resolve(isBypassed);
+            },
+            function (error) {
+                console.error('[Maintenance] Group check failed:', error);
+                reject(error);
             }
         );
     });
