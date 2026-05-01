@@ -5,36 +5,43 @@
  *  Maintenance Mode Checker
  * ============================================================
  *  Kiểm tra trạng thái bảo trì từ App 402
- *  - id_app: 386
+ *  - id_app: 369
  *  - status: 0 = bảo trì, 1 = hoạt động
  * ============================================================
  */
 
 var MAINTENANCE_APP_ID = 402;
-var TARGET_APP_ID = 386;
+var TARGET_APP_ID = 369;
+var MAINTENANCE_API_TOKEN = ''; // TODO: Điền API token của app 402
 
-function checkMaintenanceMode() {
+export function checkMaintenanceMode() {
     return new Promise(function (resolve, reject) {
         var currentUser = kintone.getLoginUser();
         var query = "id_app = " + TARGET_APP_ID;
+        var url = kintone.api.url('/k/v1/records', true) + '?app=' + MAINTENANCE_APP_ID + '&query=' + encodeURIComponent(query);
 
-        kintone.api(
-            kintone.api.url('/k/v1/records', true),
-            'GET',
-            {
-                app: MAINTENANCE_APP_ID,
-                query: query
-            },
-            function (resp) {
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Cybozu-API-Token': MAINTENANCE_API_TOKEN
+            }
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('API call failed');
+                }
+                return response.json();
+            })
+            .then(function (resp) {
                 if (resp.records && resp.records.length > 0) {
                     var record = resp.records[0];
                     var status = parseInt(record.status.value, 10);
                     var bypassIds = record.id_by_pass ? record.id_by_pass.value : '';
 
-                    // Check if current user is in bypass list
+                    // Check if current user is in individual bypass list
                     var bypassList = bypassIds.split(',').map(function (id) {
                         return id.trim();
-                    });
+                    }).filter(function (id) { return id !== ''; });
 
                     if (bypassList.indexOf(currentUser.code) !== -1) {
                         console.log('[Maintenance] Bypass for user:', currentUser.code);
@@ -53,74 +60,30 @@ function checkMaintenanceMode() {
                         return;
                     }
 
-                    // Read group bypass list
-                    var bypassGroupsRaw = record.bypass_groups_code ? record.bypass_groups_code.value : '';
-                    var bypassGroups = bypassGroupsRaw.split(',').map(function (g) {
-                        return g.trim();
-                    }).filter(function (g) { return g !== ''; });
+                    // Check group bypass using bypass_groups_code_id
+                    var bypassGroupsCodeId = record.bypass_groups_code_id ? record.bypass_groups_code_id.value : '';
+                    var bypassUserList = bypassGroupsCodeId.split(',').map(function (id) {
+                        return id.trim();
+                    }).filter(function (id) { return id !== ''; });
 
-                    if (bypassGroups.length === 0) {
-                        // No group bypass configured → show maintenance
-                        showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
-                        reject(new Error('Under maintenance'));
+                    if (bypassUserList.indexOf(currentUser.code) !== -1) {
+                        console.log('[Maintenance] Group bypass for user:', currentUser.code);
+                        resolve();
                         return;
                     }
 
-                    // Fetch current user's groups and check bypass
-                    checkGroupBypass(currentUser.code, bypassGroups)
-                        .then(function (isBypassed) {
-                            if (isBypassed) {
-                                console.log('[Maintenance] Group bypass for user:', currentUser.code);
-                                resolve();
-                            } else {
-                                showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
-                                reject(new Error('Under maintenance'));
-                            }
-                        })
-                        .catch(function () {
-                            // If group check fails, show maintenance to be safe
-                            showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
-                            reject(new Error('Under maintenance'));
-                        });
+                    // User not in bypass list → show maintenance
+                    showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
+                    reject(new Error('Under maintenance'));
+
                 } else {
                     resolve();
                 }
-            },
-            function (error) {
-                console.error('[Maintenance] Check failed:', error);
+            })
+            .catch(function (error) {
+                console.warn('[Maintenance] Check failed (App 402 may not exist or no permission):', error);
                 resolve();
-            }
-        );
-    });
-}
-
-/**
- * Check if the user belongs to any of the bypass groups
- * Uses Kintone REST API: /v1/user/groups.json
- */
-function checkGroupBypass(userCode, bypassGroups) {
-    return new Promise(function (resolve, reject) {
-        kintone.api(
-            kintone.api.url('/v1/user/groups', true),
-            'GET',
-            { code: userCode },
-            function (resp) {
-                var userGroups = resp.groups || [];
-                var isBypassed = false;
-                for (var i = 0; i < userGroups.length; i++) {
-                    if (bypassGroups.indexOf(userGroups[i].code) !== -1) {
-                        isBypassed = true;
-                        break;
-                    }
-                }
-                console.log('[Maintenance] User groups:', userGroups.map(function (g) { return g.code; }), '| Bypass groups:', bypassGroups, '| Bypassed:', isBypassed);
-                resolve(isBypassed);
-            },
-            function (error) {
-                console.error('[Maintenance] Group check failed:', error);
-                reject(error);
-            }
-        );
+            });
     });
 }
 
