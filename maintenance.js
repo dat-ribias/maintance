@@ -61,8 +61,10 @@ export function checkMaintenanceMode() {
                     }
 
                     // Check group bypass using bypass_groups_code_id
+                    // Format: "90009: h-tanaka,本部長, 90013: 12220,566,565"
                     var bypassGroupsCodeId = record.bypass_groups_code_id ? record.bypass_groups_code_id.value : '';
-                    var bypassUserList = bypassGroupsCodeId.split(',').map(function (id) {
+                    var cleanedIds = bypassGroupsCodeId.replace(/\d+:\s*/g, '');
+                    var bypassUserList = cleanedIds.split(',').map(function (id) {
                         return id.trim();
                     }).filter(function (id) { return id !== ''; });
 
