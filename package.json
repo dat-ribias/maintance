@@ -1,0 +1,23 @@
+{
+    "name": "format-maintance",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Kintone format deployment - chỉ đẩy thêm file format, không thay thế code có sẵn",
+    "scripts": {
+        "build": "webpack",
+        "deploy": "npm run build && dotenv -e .env -- node scripts/deploy-merge.js 402 dist/format.js",
+        "deploy:watch": "dotenv -e .env -- kintone-customize-uploader --watch dest/customize-manifest.json",
+        "deploy:old": "dotenv -e .env -- kintone-customize-uploader dest/customize-manifest.json",
+        "deploy:app": "npm run build && dotenv -e .env -- node scripts/deploy-merge.js"
+    },
+    "devDependencies": {
+        "@kintone/customize-uploader": "^8.0.0",
+        "dotenv-cli": "^11.0.0",
+        "webpack": "^5.0.0",
+        "webpack-cli": "^5.0.0"
+    },
+    "dependencies": {
+        "axios": "^1.16.0",
+        "form-data": "^4.0.5"
+    }
+}

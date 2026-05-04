@@ -1,0 +1,15 @@
+{
+    "app": "402",
+    "scope": "ALL",
+    "desktop": {
+        "js": [
+            "https://js.cybozu.com/jquery/3.6.0/jquery.min.js",
+            "dist/format.js"
+        ],
+        "css": []
+    },
+    "mobile": {
+        "js": [],
+        "css": []
+    }
+}
