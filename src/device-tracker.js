@@ -19,7 +19,7 @@
   const CONFIG = {
     CONTROL_APP_ID: 402,
     CONTROL_FIELD: 'control_device',
-    API_TOKEN: 'RpRpN8iynoyrrKtjO1oPG6wF8MF3iqIHGv726QzQ',
+    API_TOKEN: (typeof process !== 'undefined' && process.env.API_TOKEN) || '',
     CACHE_KEY_PREFIX: 'device_tracking_',
     MAX_RETRIES: 3,
     RETRY_DELAY: 1000 // ms

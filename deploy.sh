@@ -19,7 +19,7 @@ echo "🔨 Building..."
 npm run build || exit 1
 
 echo "🚀 Deploying to app $APP_ID..."
-npx dotenv -e .env -- node scripts/deploy-merge.js "$APP_ID" dist/format.js
+npx dotenv -e .env -- node scripts/deploy-merge.js "$APP_ID" dist/control.js
 
 if [ $? -eq 0 ]; then
     echo "✅ Deploy thành công!"

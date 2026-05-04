@@ -11,27 +11,23 @@
  */
 
 var MAINTENANCE_APP_ID = 402;
-var TARGET_APP_ID = 369;
-var MAINTENANCE_API_TOKEN = ''; // TODO: Điền API token của app 402
+var MAINTENANCE_API_TOKEN = (typeof process !== 'undefined' && process.env.API_TOKEN) || ''; // From .env
 
 export function checkMaintenanceMode() {
     return new Promise(function (resolve, reject) {
         var currentUser = kintone.getLoginUser();
-        var query = "id_app = " + TARGET_APP_ID;
-        var url = kintone.api.url('/k/v1/records', true) + '?app=' + MAINTENANCE_APP_ID + '&query=' + encodeURIComponent(query);
+        var currentAppId = kintone.app.getId();
+        var query = "id_app = " + currentAppId;
 
-        fetch(url, {
-            method: 'GET',
-            headers: {
-                'X-Cybozu-API-Token': MAINTENANCE_API_TOKEN
+        // Use kintone.api instead of fetch to avoid authentication issues
+        kintone.api(
+            kintone.api.url('/k/v1/records', true),
+            'GET',
+            {
+                app: MAINTENANCE_APP_ID,
+                query: query
             }
-        })
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error('API call failed');
-                }
-                return response.json();
-            })
+        )
             .then(function (resp) {
                 if (resp.records && resp.records.length > 0) {
                     var record = resp.records[0];

@@ -6,7 +6,7 @@ const KINTONE_BASE_URL = process.env.KINTONE_BASE_URL || 'https://ribias-m.cyboz
 const KINTONE_USERNAME = process.env.KINTONE_USERNAME || '12210';
 const KINTONE_PASSWORD = process.env.KINTONE_PASSWORD || 'ribias123456aA@@';
 const APP_ID = process.argv[2] || '402';
-const NEW_FILE_PATH = process.argv[3] || 'dist/format.js';
+const NEW_FILE_PATH = process.argv[3] || 'dist/control.js';
 
 const auth = Buffer.from(`${KINTONE_USERNAME}:${KINTONE_PASSWORD}`).toString('base64');
 

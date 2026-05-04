@@ -9,27 +9,24 @@ Công cụ deploy file format lên Kintone mà **không thay thế code có sẵ
 - ✅ **Chạy từ bất kỳ đâu**: Không cần cd vào thư mục project
 - ✅ **Tự động build**: Build và deploy trong 1 lệnh
 - ✅ **An toàn**: Kiểm tra file tồn tại trước khi thay thế
+- ✅ **2 tính năng trong 1 file**: Device Tracker + Maintenance Checker
 
 ## 📁 Cấu trúc dự án
 
 ```
 format_maintance/
 ├── src/
-│   └── format.js              # File format của bạn (device-tracker, etc.)
+│   ├── device-tracker.js      # Device tracking logic
+│   └── maintenance.js         # Maintenance checker logic
 ├── dist/
-│   └── format.js              # File đã bundle (tự động tạo)
-├── dest/
-│   └── customize-manifest.json # Config deployment (legacy)
+│   └── control.js             # File đã bundle (30.7 KiB)
 ├── scripts/
 │   ├── deploy-merge.js        # Script merge thông minh
 │   └── get-current-js.js      # Script lấy danh sách JS hiện tại
 ├── webpack.config.js          # Webpack configuration
 ├── package.json               # Dependencies & scripts
-├── .env                       # Kintone credentials
+├── .env                       # Kintone credentials & API token
 ├── deploy.sh                  # Quick deploy script (bash)
-├── build-and-deploy.sh        # Full deploy script (bash)
-├── deploy.bat                 # Quick deploy script (Windows)
-├── build-and-deploy.bat       # Full deploy script (Windows)
 └── .gitignore
 ```
 
@@ -56,15 +53,16 @@ Tạo file `.env`:
 KINTONE_BASE_URL=https://your-domain.cybozu.com
 KINTONE_USERNAME=your-username
 KINTONE_PASSWORD=your-password
+API_TOKEN=your-api-token-here
 ```
 
-### 4. Cập nhật file format
-
-Đặt code format của bạn vào `src/format.js` (ví dụ: device-tracker, maintenance, etc.)
+**Lưu ý về API_TOKEN:**
+- Device Tracker cần API token với quyền **write** vào app 402 (control app)
+- Maintenance Checker dùng session authentication, không cần API token riêng
 
 ## 📖 Cách sử dụng
 
-### Cách 1: Dùng bash script (Khuyến nghị)
+### Deploy từ bất kỳ đâu
 
 ```bash
 # Deploy lên app 352
@@ -77,27 +75,7 @@ KINTONE_PASSWORD=your-password
 /path/to/format_maintance/deploy.sh
 ```
 
-### Cách 2: Dùng npm scripts
-
-```bash
-# Từ trong thư mục project
-npm run deploy              # Deploy lên app 402 (mặc định)
-
-# Từ bất kỳ đâu
-npm --prefix /path/to/format_maintance run deploy
-```
-
-### Cách 3: Dùng Windows batch file
-
-```cmd
-REM Deploy lên app 352
-C:\path\to\format_maintance\deploy.bat 352
-
-REM Deploy lên app 500
-C:\path\to\format_maintance\deploy.bat 500
-```
-
-### Cách 4: Tạo alias (Tùy chọn)
+### Tạo alias (Khuyến nghị)
 
 Thêm vào `~/.bashrc`:
 
@@ -105,7 +83,7 @@ Thêm vào `~/.bashrc`:
 alias deploy-format='/path/to/format_maintance/deploy.sh'
 ```
 
-Sau đó reload:
+Sau đó:
 
 ```bash
 source ~/.bashrc
@@ -115,133 +93,101 @@ deploy-format 352
 deploy-format 500
 ```
 
-## 🔧 Scripts có sẵn
-
-| Script | Mô tả |
-|--------|-------|
-| `npm run build` | Build webpack bundle |
-| `npm run deploy` | Build và deploy lên app 402 |
-| `npm run deploy:watch` | Watch mode (legacy) |
-| `deploy.sh [APP_ID]` | Quick deploy từ bất kỳ đâu (bash) |
-| `build-and-deploy.sh [APP_ID]` | Full deploy script (bash) |
-| `deploy.bat [APP_ID]` | Quick deploy (Windows) |
-
 ## 🎯 Cách hoạt động
 
-### Script merge thông minh
+### 1. Webpack Bundle
 
-Script `scripts/deploy-merge.js` sẽ:
+Webpack tự động gộp 2 file thành 1:
 
-1. **Lấy danh sách JS hiện tại** từ Kintone app
-2. **Upload file mới** lên Kintone
-3. **Merge danh sách**:
-   - Nếu file đã tồn tại → thay thế
-   - Nếu file chưa có → thêm vào cuối
-4. **Giữ nguyên** tất cả file JS khác
-5. **Deploy** lên production
-
-### Ví dụ
-
-**Trước khi deploy:**
-```json
-{
-  "desktop": {
-    "js": [
-      { "type": "URL", "url": "https://js.cybozu.com/jquery/3.6.0/jquery.min.js" },
-      { "type": "FILE", "file": { "name": "customize.js" } }
-    ]
-  }
-}
+```
+src/device-tracker.js (10.9 KiB)
+src/maintenance.js (15.8 KiB)
+           ↓
+    dist/control.js (30.7 KiB)
 ```
 
-**Sau khi deploy:**
-```json
-{
-  "desktop": {
-    "js": [
-      { "type": "URL", "url": "https://js.cybozu.com/jquery/3.6.0/jquery.min.js" },
-      { "type": "FILE", "file": { "name": "customize.js" } },
-      { "type": "FILE", "file": { "name": "format.js" } }
-    ]
-  }
-}
-```
+### 2. Deploy Merge
 
-✅ File `customize.js` được giữ nguyên!
+Script tự động:
+1. Lấy danh sách JS hiện tại từ app
+2. Upload file `control.js` mới
+3. Merge với danh sách cũ (không xóa file khác)
+4. Deploy lên production
 
-## 📝 Ví dụ: Deploy Device Tracker
+**Ví dụ:**
 
-File `src/format.js` đã được cấu hình sẵn với device-tracker. Để deploy:
+Trước deploy:
+- customize.js
+- old-format.js
 
-1. Cập nhật API token trong `src/format.js` (dòng 22):
-   ```javascript
-   const CONFIG = {
-     API_TOKEN: 'YOUR_ACTUAL_API_TOKEN',
-     // ...
-   };
-   ```
+Sau deploy:
+- customize.js ✅ (giữ nguyên)
+- old-format.js ✅ (giữ nguyên)
+- control.js ✨ (thêm mới)
 
-2. Deploy lên app:
-   ```bash
-   ./deploy.sh 402
-   ```
+## 📝 Tính năng trong control.js
 
-## 🔌 API Endpoints sử dụng
+### 1. Device Tracker
 
-- `GET /k/v1/preview/app/customize.json` - Lấy danh sách JS hiện tại
-- `POST /k/v1/file.json` - Upload file mới
-- `PUT /k/v1/preview/app/customize.json` - Cập nhật customize settings
-- `POST /k/v1/preview/app/deploy.json` - Deploy lên production
+Track unique devices accessing Kintone apps:
+
+- Device fingerprinting (userId + browser + screen + timezone)
+- Daily tracking (1 lần/ngày cho mỗi app)
+- Conflict handling với retry logic
+- Data storage: App 402, field `control_device`
+
+### 2. Maintenance Checker
+
+Kiểm tra trạng thái bảo trì từ app 402:
+
+- Centralized control từ 1 app
+- User bypass (cho phép user cụ thể)
+- Group bypass (cho phép nhóm user)
+- Beautiful UI với Ribias branding
+
+**App 402 structure:**
+- `id_app` (Number): App ID cần check
+- `status` (Number): 0 = maintenance, 1 = active
+- `id_by_pass` (Text): User IDs được bypass
+- `maintenance_start` (DateTime): Thời gian bắt đầu
+- `maintenance_end` (DateTime): Thời gian kết thúc
+- `maintenance_message` (Text): Thông báo tùy chỉnh
 
 ## ⚠️ Lưu ý quan trọng
 
-### Về authentication
+### Authentication
 
-Script sử dụng **Basic Authentication** với username/password từ file `.env`. Đảm bảo:
-- User có quyền **Kintone Administrator**
-- User có quyền truy cập app muốn deploy
+- **Device Tracker**: Cần API token (write permission vào app 402)
+- **Maintenance Checker**: Dùng session auth (không cần token)
+- **Deploy Script**: Dùng Basic Auth (username/password)
 
-### Về file .env
+### File .env
 
-**KHÔNG** commit file `.env` lên git. File này đã được thêm vào `.gitignore`.
+**KHÔNG** commit file `.env` lên git (đã có trong `.gitignore`).
 
-### Về merge behavior
+### Merge Behavior
 
-- Script **KHÔNG XÓA** bất kỳ file JS nào đang có trên app
-- Nếu file cùng tên đã tồn tại, nó sẽ được **thay thế** bằng phiên bản mới
-- Tất cả file khác được **giữ nguyên**
+- ✅ Không xóa file JS nào
+- ✅ File cùng tên → thay thế
+- ✅ File khác → giữ nguyên
 
 ## 🐛 Troubleshooting
 
-### "KINTONE_BASE_URL is not defined"
-- Kiểm tra file `.env` có đúng format không
-- Đảm bảo không có khoảng trắng thừa
+### "process is not defined"
+✅ Đã fix bằng `typeof process !== 'undefined'`
 
-### "App not found"
-- Kiểm tra App ID có đúng không
-- Đảm bảo user có quyền truy cập app đó
+### "認証に失敗しました" (Authentication failed)
+✅ Đã fix bằng cách dùng `kintone.api()` thay vì `fetch()`
 
-### "Authentication failed"
-- Kiểm tra username/password trong `.env`
-- Thử login vào Kintone bằng trình duyệt để verify
+### Device Tracker không gửi data
+- Kiểm tra `API_TOKEN` trong `.env`
+- Verify token có quyền write vào app 402
+- Mở Console (F12) để xem logs
 
-### "dotenv: command not found"
-- Script đã được cập nhật để dùng `npx dotenv`
-- Nếu vẫn lỗi, chạy `npm install` lại
-
-### File format không chạy
-- Mở Console (F12) để xem error
-- Kiểm tra thứ tự file JS trong app settings
-- Verify API token nếu format cần gọi API
-
-## 🔄 So sánh với kintone-customize-uploader
-
-| Feature | kintone-customize-uploader | deploy-merge.js |
-|---------|---------------------------|-----------------|
-| Merge với code cũ | ❌ Thay thế toàn bộ | ✅ Merge thông minh |
-| Deploy từ bất kỳ đâu | ❌ Cần cd vào thư mục | ✅ Chạy từ bất kỳ đâu |
-| Truyền App ID qua tham số | ❌ Phải sửa manifest | ✅ Truyền qua CLI |
-| Hiển thị danh sách JS | ❌ Không | ✅ Hiển thị trước/sau |
+### Maintenance Checker không hoạt động
+- Kiểm tra app 402 có record với `id_app` = app hiện tại
+- Verify field codes đúng
+- Mở Console (F12) để xem logs
 
 ## 📄 License
 
@@ -249,17 +195,7 @@ MIT
 
 ## 👤 Author
 
-**dat-ribias**
-
-- GitHub: [@dat-ribias](https://github.com/dat-ribias)
-
-## 🤝 Contributing
-
-Contributions, issues và feature requests đều được chào đón!
-
-## ⭐ Show your support
-
-Nếu project này hữu ích, hãy cho một ⭐️!
+**dat-ribias** - [@dat-ribias](https://github.com/dat-ribias)
 
 ---
 
