@@ -19,7 +19,7 @@
   const CONFIG = {
     CONTROL_APP_ID: 402,
     CONTROL_FIELD: 'control_device',
-    API_TOKEN: (typeof process !== 'undefined' && process.env.API_TOKEN) || '',
+    API_TOKEN: process.env.API_TOKEN || '',
     CACHE_KEY_PREFIX: 'device_tracking_',
     MAX_RETRIES: 3,
     RETRY_DELAY: 1000 // ms
@@ -109,27 +109,59 @@
     try {
       // Query to find record by id_app
       const query = `id_app = ${appId}`;
-      const resp = await kintone.api(
-        kintone.api.url('/k/v1/records', true),
-        'GET',
-        {
-          app: CONFIG.CONTROL_APP_ID,
-          query: query
-        }
-      );
 
-      if (resp.records && resp.records.length > 0) {
-        const record = resp.records[0];
-        const fieldValue = record[CONFIG.CONTROL_FIELD]?.value || '{}';
-        return {
-          data: JSON.parse(fieldValue),
-          revision: record.$revision.value,
-          recordId: record.$id.value
-        };
+      console.log('[Device Tracker] API_TOKEN:', CONFIG.API_TOKEN ? 'EXISTS (length=' + CONFIG.API_TOKEN.length + ')' : 'EMPTY');
+
+      // Use kintone.proxy() with API token for authentication
+      if (CONFIG.API_TOKEN) {
+        const url = kintone.api.url('/k/v1/records', true) +
+          '?app=' + encodeURIComponent(CONFIG.CONTROL_APP_ID) +
+          '&query=' + encodeURIComponent(query);
+
+        const proxyResp = await kintone.proxy(
+          url,
+          'GET',
+          { 'X-Cybozu-API-Token': CONFIG.API_TOKEN },
+          {}
+        );
+
+        const resp = JSON.parse(proxyResp[0]);
+
+        if (resp.records && resp.records.length > 0) {
+          const record = resp.records[0];
+          const fieldValue = record[CONFIG.CONTROL_FIELD]?.value || '{}';
+          return {
+            data: JSON.parse(fieldValue),
+            revision: record.$revision.value,
+            recordId: record.$id.value
+          };
+        } else {
+          console.warn(`[Device Tracker] No record found for app ${appId}`);
+          return { data: {}, revision: null, recordId: null };
+        }
       } else {
-        // No record found for this app
-        console.warn(`[Device Tracker] No record found for app ${appId}`);
-        return { data: {}, revision: null, recordId: null };
+        // Fallback to kintone.api() if no token
+        const resp = await kintone.api(
+          kintone.api.url('/k/v1/records', true),
+          'GET',
+          {
+            app: CONFIG.CONTROL_APP_ID,
+            query: query
+          }
+        );
+
+        if (resp.records && resp.records.length > 0) {
+          const record = resp.records[0];
+          const fieldValue = record[CONFIG.CONTROL_FIELD]?.value || '{}';
+          return {
+            data: JSON.parse(fieldValue),
+            revision: record.$revision.value,
+            recordId: record.$id.value
+          };
+        } else {
+          console.warn(`[Device Tracker] No record found for app ${appId}`);
+          return { data: {}, revision: null, recordId: null };
+        }
       }
     } catch (error) {
       console.error('[Device Tracker] Error fetching current data:', error);
@@ -162,11 +194,26 @@
         payload.revision = revision;
       }
 
-      await kintone.api(
-        kintone.api.url('/k/v1/record', true),
-        'PUT',
-        payload
-      );
+      // Use kintone.proxy() with API token for authentication
+      if (CONFIG.API_TOKEN) {
+        const url = kintone.api.url('/k/v1/record', true);
+        await kintone.proxy(
+          url,
+          'PUT',
+          {
+            'X-Cybozu-API-Token': CONFIG.API_TOKEN,
+            'Content-Type': 'application/json'
+          },
+          JSON.stringify(payload)
+        );
+      } else {
+        // Fallback to kintone.api() if no token
+        await kintone.api(
+          kintone.api.url('/k/v1/record', true),
+          'PUT',
+          payload
+        );
+      }
 
       console.log('[Device Tracker] Data updated successfully');
       return true;

@@ -11,7 +11,7 @@
  */
 
 var MAINTENANCE_APP_ID = 402;
-var MAINTENANCE_API_TOKEN = (typeof process !== 'undefined' && process.env.API_TOKEN) || ''; // From .env
+var MAINTENANCE_API_TOKEN = process.env.API_TOKEN || ''; // From .env
 
 export function checkMaintenanceMode() {
     return new Promise(function (resolve, reject) {
@@ -19,16 +19,20 @@ export function checkMaintenanceMode() {
         var currentAppId = kintone.app.getId();
         var query = "id_app = " + currentAppId;
 
-        // Use kintone.api instead of fetch to avoid authentication issues
-        kintone.api(
-            kintone.api.url('/k/v1/records', true),
-            'GET',
-            {
-                app: MAINTENANCE_APP_ID,
-                query: query
-            }
-        )
-            .then(function (resp) {
+        // Use kintone.proxy() with API token for authentication
+        if (MAINTENANCE_API_TOKEN) {
+            var url = kintone.api.url('/k/v1/records', true) +
+                '?app=' + encodeURIComponent(MAINTENANCE_APP_ID) +
+                '&query=' + encodeURIComponent(query);
+
+            kintone.proxy(
+                url,
+                'GET',
+                { 'X-Cybozu-API-Token': MAINTENANCE_API_TOKEN },
+                {}
+            )
+                .then(function (proxyResp) {
+                    var resp = JSON.parse(proxyResp[0]);
                 if (resp.records && resp.records.length > 0) {
                     var record = resp.records[0];
                     var status = parseInt(record.status.value, 10);
@@ -82,6 +86,70 @@ export function checkMaintenanceMode() {
                 console.warn('[Maintenance] Check failed (App 402 may not exist or no permission):', error);
                 resolve();
             });
+        } else {
+            // Fallback to kintone.api() if no token
+            kintone.api(
+                kintone.api.url('/k/v1/records', true),
+                'GET',
+                {
+                    app: MAINTENANCE_APP_ID,
+                    query: query
+                }
+            )
+                .then(function (resp) {
+                    if (resp.records && resp.records.length > 0) {
+                        var record = resp.records[0];
+                        var status = parseInt(record.status.value, 10);
+                        var bypassIds = record.id_by_pass ? record.id_by_pass.value : '';
+
+                        // Check if current user is in individual bypass list
+                        var bypassList = bypassIds.split(',').map(function (id) {
+                            return id.trim();
+                        }).filter(function (id) { return id !== ''; });
+
+                        if (bypassList.indexOf(currentUser.code) !== -1) {
+                            console.log('[Maintenance] Bypass for user:', currentUser.code);
+                            resolve();
+                            return;
+                        }
+
+                        // Read new detail fields
+                        var maintStart = record.maintenance_start ? record.maintenance_start.value : '';
+                        var maintEnd = record.maintenance_end ? record.maintenance_end.value : '';
+                        var maintMsg = record.maintenance_message ? record.maintenance_message.value : '';
+
+                        var isUnderMaintenance = status === 0;
+                        if (!isUnderMaintenance) {
+                            resolve();
+                            return;
+                        }
+
+                        // Check group bypass using bypass_groups_code_id
+                        var bypassGroupsCodeId = record.bypass_groups_code_id ? record.bypass_groups_code_id.value : '';
+                        var cleanedIds = bypassGroupsCodeId.replace(/\d+:\s*/g, '');
+                        var bypassUserList = cleanedIds.split(',').map(function (id) {
+                            return id.trim();
+                        }).filter(function (id) { return id !== ''; });
+
+                        if (bypassUserList.indexOf(currentUser.code) !== -1) {
+                            console.log('[Maintenance] Group bypass for user:', currentUser.code);
+                            resolve();
+                            return;
+                        }
+
+                        // User not in bypass list → show maintenance
+                        showMaintenanceOverlay(maintStart, maintEnd, maintMsg);
+                        reject(new Error('Under maintenance'));
+
+                    } else {
+                        resolve();
+                    }
+                })
+                .catch(function (error) {
+                    console.warn('[Maintenance] Check failed (App 402 may not exist or no permission):', error);
+                    resolve();
+                });
+        }
     });
 }
 
