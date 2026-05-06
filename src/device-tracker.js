@@ -103,39 +103,53 @@
   // ═══════════════════════════════════════════════════════
 
   /**
-   * Get current device data structure
+   * Get current device data structure for specific app
    */
-  const getCurrentDeviceData = async () => {
+  const getCurrentDeviceData = async (appId) => {
     try {
-      // Fetch the control record (assuming record ID 1)
+      // Query to find record by id_app
+      const query = `id_app = ${appId}`;
       const resp = await kintone.api(
-        kintone.api.url('/k/v1/record', true),
+        kintone.api.url('/k/v1/records', true),
         'GET',
         {
           app: CONFIG.CONTROL_APP_ID,
-          id: 1
+          query: query
         }
       );
 
-      const fieldValue = resp.record[CONFIG.CONTROL_FIELD]?.value || '{}';
-      return {
-        data: JSON.parse(fieldValue),
-        revision: resp.record.$revision.value
-      };
+      if (resp.records && resp.records.length > 0) {
+        const record = resp.records[0];
+        const fieldValue = record[CONFIG.CONTROL_FIELD]?.value || '{}';
+        return {
+          data: JSON.parse(fieldValue),
+          revision: record.$revision.value,
+          recordId: record.$id.value
+        };
+      } else {
+        // No record found for this app
+        console.warn(`[Device Tracker] No record found for app ${appId}`);
+        return { data: {}, revision: null, recordId: null };
+      }
     } catch (error) {
       console.error('[Device Tracker] Error fetching current data:', error);
-      return { data: {}, revision: null };
+      return { data: {}, revision: null, recordId: null };
     }
   };
 
   /**
    * Update device data with retry logic
    */
-  const updateDeviceData = async (newData, revision, retryCount = 0) => {
+  const updateDeviceData = async (newData, revision, recordId, retryCount = 0) => {
     try {
+      if (!recordId) {
+        console.error('[Device Tracker] No record ID provided');
+        return false;
+      }
+
       const payload = {
         app: CONFIG.CONTROL_APP_ID,
-        id: 1,
+        id: recordId,
         record: {
           [CONFIG.CONTROL_FIELD]: {
             value: JSON.stringify(newData)
@@ -167,9 +181,9 @@
         await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
 
         // Fetch latest data and retry
-        const { data: latestData, revision: latestRevision } = await getCurrentDeviceData();
+        const { data: latestData, revision: latestRevision, recordId: latestRecordId } = await getCurrentDeviceData(kintone.app.getId());
         const mergedData = mergeDeviceInfo(latestData, newData);
-        return updateDeviceData(mergedData, latestRevision, retryCount + 1);
+        return updateDeviceData(mergedData, latestRevision, latestRecordId, retryCount + 1);
       }
 
       return false;
@@ -268,18 +282,21 @@
         apps: [currentAppId.toString()]
       };
 
-      // Fetch current data
-      const { data: currentData, revision } = await getCurrentDeviceData();
+      // Fetch current data for this app
+      const { data: currentData, revision, recordId } = await getCurrentDeviceData(currentAppId);
 
-      // Merge new device info
-      const newData = { ...currentData };
-      if (!newData[today]) {
-        newData[today] = [];
+      // Prepare new device info
+      const newDeviceData = { ...currentData };
+      if (!newDeviceData[today]) {
+        newDeviceData[today] = [];
       }
-      newData[today].push(deviceInfo);
+      newDeviceData[today].push(deviceInfo);
+
+      // Merge with existing data
+      const mergedData = mergeDeviceInfo(currentData, newDeviceData);
 
       // Update with retry logic
-      const success = await updateDeviceData(newData, revision);
+      const success = await updateDeviceData(mergedData, revision, recordId);
 
       if (success) {
         // Update cache to prevent duplicate sends for this app
